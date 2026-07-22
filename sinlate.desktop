@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Sinlate
+GenericName=Offline Translator
+Comment=Translate the text you have selected with one hotkey — fully offline
+Exec=/usr/bin/python3 /home/sinep/Sinlate/sinlate.py --show
+Icon=accessories-dictionary
+Terminal=false
+Categories=Utility;Office;Dictionary;
+Keywords=translate;translation;offline;german;english;
+StartupNotify=false

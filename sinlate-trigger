@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Tiny client for the Sinlate app — this is what the GNOME hotkey runs.
+
+Usage:  sinlate-trigger [translate|show|ping|quit]
+
+Standard library only (no venv), so it can be bound directly to a desktop shortcut.
+If the app is not running, a `translate` request starts it hidden and then translates —
+a hotkey that silently does nothing would just look broken.
+"""
+import os
+import socket
+import subprocess
+import sys
+import time
+
+RUNTIME = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+SOCK = os.path.join(RUNTIME, "sinlate.sock")
+APP = os.path.join(os.path.dirname(os.path.realpath(__file__)), "sinlate.py")
+LOG_DIR = os.path.expanduser("~/.cache/sinlate")
+
+
+def send(cmd: str, timeout: float = 5.0) -> str | None:
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect(SOCK)
+        s.sendall(cmd.encode())
+        reply = s.recv(4096).decode("utf-8", "replace")
+        s.close()
+        return reply
+    except (FileNotFoundError, ConnectionRefusedError, socket.timeout, OSError):
+        return None
+
+
+def notify(title: str, body: str) -> None:
+    try:
+        subprocess.run(["notify-send", "-a", "Sinlate", title, body],
+                       timeout=3, check=False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def start_app() -> None:
+    os.makedirs(LOG_DIR, exist_ok=True)
+    logfile = open(os.path.join(LOG_DIR, "sinlate.log"), "ab", buffering=0)
+    subprocess.Popen([sys.executable, APP, "--hidden"],
+                     stdout=logfile, stderr=logfile, stdin=subprocess.DEVNULL,
+                     start_new_session=True)
+
+
+def main() -> int:
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "translate"
+
+    reply = send(cmd)
+    if reply is not None:
+        print(reply)
+        return 0
+
+    if cmd not in ("translate", "show"):
+        sys.stderr.write(f"sinlate-trigger: not running (no {SOCK})\n")
+        return 1
+
+    notify("Sinlate", "Starting…")
+    start_app()
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        time.sleep(0.2)
+        if send("ping", timeout=1) == "pong":
+            reply = send(cmd)
+            if reply is not None:
+                print(reply)
+                return 0
+    notify("Sinlate failed to start", f"See {LOG_DIR}/sinlate.log")
+    sys.stderr.write("sinlate-trigger: app did not come up within 10s\n")
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
