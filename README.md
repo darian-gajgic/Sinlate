@@ -1,114 +1,88 @@
 # Sinlate
 
-Select text anywhere, press a hotkey, read the translation in a small popup at the right of
-the screen. The translation lands on your clipboard too, so you can paste it straight where
-you need it. Everything runs locally — no internet, no Google Translate tab.
+Select text anywhere, press a hotkey, and read the translation in a small popup at the right edge of the screen. The translation also lands on your clipboard, ready to paste. A local LLM does the work, so no text is sent to an online translator.
 
-Default hotkey: **`F9`**
+## Why
 
-The hotkey can be **a single key or a combination** — whatever you press in Settings is what
-gets bound. Free single keys on this desktop include `F9`–`F12`, `Pause`, `Insert`,
-`Scroll_Lock` and `Menu`. Sinlate checks your live GNOME shortcuts and refuses a key that is
-already taken (it will tell you what owns it). Binding a key you type with — a letter, `space`,
-`Return` — is allowed too, but it asks first, because that key then translates instead of
-typing in *every* app.
+Translating a sentence normally means copying it into a browser tab. Sinlate does it in place, with one key press, and keeps the text on your machine.
 
 ## How it decides the direction
 
-You configure a language **pair** (default German ⇄ English) and it flips automatically:
+You configure a language pair (default German and English) and the direction flips automatically:
 
 | You selected | You get |
 |---|---|
 | German | English |
 | English | German |
-| French, Spanish, anything else | German |
+| Anything else (French, Spanish, ...) | German |
 
-In Settings, "My language" is the one everything gets translated *into*; text already in that
-language is translated *out* into the second language.
+"My language" in Settings is the language everything is translated into. Text already in that language is translated into the second language.
+
+## Requirements
+
+- Linux with GNOME on Wayland. The hotkey is a GNOME custom shortcut, and the selection is read with `wl-paste`.
+- Python 3 with Tkinter (`python3-tk`). Standard library only: no virtualenv, no pip installs.
+- `wl-clipboard`.
+- An Ollama server with `gemma3:4b`. The default URL, `http://127.0.0.1:11435`, is the cleanup instance that [local-wisprflow](https://github.com/darian-gajgic/local-wisprflow) runs, so the model is shared rather than loaded twice. Any Ollama server works through the `ollama_url` setting.
 
 ## Install
 
 ```bash
-cd ~/Sinlate
+git clone https://github.com/darian-gajgic/Sinlate.git
+cd Sinlate
 ./install.sh
 ```
 
-That registers the GNOME shortcut (appending to the shared shortcut list, so the wisprflow
-dictation hotkey is untouched) and adds a "Sinlate" entry to the app menu.
+`install.sh` registers the GNOME shortcut (default `F9`), adds a "Sinlate" entry to the app menu and checks that the model is available. It appends to the shared shortcut list, so other custom shortcuts stay untouched. The app-menu entry in `sinlate.desktop` contains the absolute path of the original install; adjust its `Exec` line if your clone lives elsewhere.
 
-## Using it
+## Usage
 
-- **Translate**: highlight text in any app → press the hotkey. A popup appears at the right
-  edge for 5 seconds. Hover it to keep it open; click it to dismiss early.
-- **Main window**: launch *Sinlate* from the app menu, or run `./sinlate-trigger show`.
-  - **History** — every translation from this session, newest first, with a per-row Copy
-    button. It is memory-only: quitting Sinlate clears it, nothing is written to disk.
-  - **Settings** — hotkey, language pair, popup duration, auto-copy. Saved immediately to
-    `~/.config/sinlate/config.json`.
-- Closing the main window only hides it; the hotkey keeps working. Use **Quit Sinlate** to
-  stop it entirely. Pressing the hotkey afterwards starts it again automatically.
+- **Translate:** highlight text in any app and press the hotkey. The popup stays for 5 seconds; hover to keep it, click to dismiss. If nothing is highlighted, Sinlate uses the clipboard.
+- **Main window:** open *Sinlate* from the app menu or run `./sinlate-trigger show`.
+  - *History* lists this session's translations with a Copy button per row. It lives in memory only and is cleared when Sinlate quits.
+  - *Settings* covers the hotkey, language pair, popup duration and auto-copy, saved to `~/.config/sinlate/config.json`.
+- Closing the window only hides it. **Quit Sinlate** stops the app; the next hotkey press starts it again.
+
+The hotkey can be a single key or a combination. Sinlate reads the live GNOME shortcuts and refuses a key that is already taken, naming its owner. It asks before binding a typing key such as a letter or `space`, because that key would then translate instead of type in every app.
 
 ## How it works
 
-One resident Python process (standard library only — no venv, no pip installs):
+One resident Python process:
 
 ```
-GNOME hotkey → sinlate-trigger → Unix socket → Sinlate
-                                                 ├─ wl-paste --primary   (what you highlighted)
-                                                 ├─ gemma3:4b @ :11435   (detect + translate)
-                                                 ├─ wl-copy              (result to clipboard)
-                                                 └─ popup + history
+GNOME hotkey -> sinlate-trigger -> Unix socket -> Sinlate
+                                                    |- wl-paste --primary  (the highlighted text)
+                                                    |- gemma3:4b on Ollama (detect + translate)
+                                                    |- wl-copy             (result to clipboard)
+                                                    '- popup + history
 ```
 
-The translation model is **gemma3:4b** on the Ollama instance at `127.0.0.1:11435` — the same
-one local-wisprflow already runs for transcript cleanup. Sinlate is just a second client of
-it, so there is no extra model in VRAM. `keep_alive` is 5 minutes to match that service; the
-first translation after an idle gap takes ~5–10 s while the model loads, then ~1 s.
-
-If nothing is highlighted, Sinlate falls back to the normal clipboard.
-
-## Settings reference (`~/.config/sinlate/config.json`)
+## Settings (`~/.config/sinlate/config.json`)
 
 | Key | Default | Meaning |
 |---|---|---|
-| `hotkey` | `F9` | GNOME accelerator; a bare keysym like `F9` or a combo like `<Ctrl><Super>t` |
-| `lang_native` | `German` | primary target — everything else is translated into this |
-| `lang_other` | `English` | target for text already in `lang_native` |
-| `popup_seconds` | `5.0` | popup lifetime |
-| `auto_copy` | `true` | put the translation on the clipboard |
-| `max_chars` | `4000` | input cap (the model's context is 4096 tokens) |
-| `ollama_url` | `http://127.0.0.1:11435` | wisprflow's cleanup-LLM instance |
-| `llm_model` | `gemma3:4b` | translation model |
-| `llm_timeout` | `60` | seconds; covers a cold model load |
-| `llm_keep_alive` | `5m` | must match the service's own setting |
+| `hotkey` | `F9` | GNOME accelerator: a key such as `F9` or a combination such as `<Ctrl><Super>t` |
+| `lang_native` | `German` | Target for everything not already in this language |
+| `lang_other` | `English` | Target for text already in `lang_native` |
+| `popup_seconds` | `5.0` | Popup lifetime |
+| `auto_copy` | `true` | Put the translation on the clipboard |
+| `max_chars` | `4000` | Input cap (the model context is 4096 tokens) |
+| `ollama_url` | `http://127.0.0.1:11435` | Ollama server |
+| `llm_model` | `gemma3:4b` | Translation model |
+| `llm_timeout` | `60` | Seconds, enough for a cold model load |
+| `llm_keep_alive` | `5m` | Keep in line with the Ollama service's own setting |
 
 ## Troubleshooting
 
-**"Translation engine offline"** — the Ollama instance is not running:
-```bash
-systemctl --user start wf-cleanup-llm.service
-```
+| Symptom | Fix |
+|---|---|
+| "Translation engine offline" | Start the Ollama instance, for example `systemctl --user start wf-cleanup-llm.service` |
+| "Model gemma3:4b is missing" | `OLLAMA_HOST=127.0.0.1:11435 ollama pull gemma3:4b` |
+| Hotkey does nothing | `python3 hotkey.py show` to inspect, `python3 hotkey.py apply F10` to rebind, `./sinlate-trigger translate` to test the app |
+| Need the logs | `~/.cache/sinlate/sinlate.log` when started by the hotkey |
+| Test the translator alone | `python3 engine.py "Wie spät ist es?"` |
 
-**"Model gemma3:4b is missing"**
-```bash
-OLLAMA_HOST=127.0.0.1:11435 ollama pull gemma3:4b
-```
-
-**Hotkey does nothing** — check what is registered, and that nothing else grabs the key:
-```bash
-python3 hotkey.py show
-python3 hotkey.py apply F10     # bind a different key from the shell
-./sinlate-trigger translate     # does the app itself work?
-```
-GNOME's own shortcut list is the source of truth: if you change Sinlate's shortcut in GNOME
-Settings, Sinlate adopts it on the next start rather than overwriting it.
-
-**Logs** — when started by the hotkey, output goes to `~/.cache/sinlate/sinlate.log`.
-
-**Test the translator alone**
-```bash
-python3 engine.py "Wie spät ist es?"
-```
+GNOME's shortcut list is the source of truth. If you change the shortcut in GNOME Settings, Sinlate adopts it on the next start.
 
 ## Uninstall
 
@@ -122,11 +96,15 @@ rm -rf ~/.config/sinlate ~/.cache/sinlate
 
 | File | Role |
 |---|---|
-| `sinlate.py` | app controller: socket server, event pump, worker threads |
-| `engine.py` | selection grabbing, the Ollama call, clipboard |
-| `popup.py` | the borderless non-focus-stealing result popup |
-| `mainwin.py` | history + settings window, hotkey capture |
-| `theme.py` | palette, DPI scaling, monitor geometry, ttk styling |
-| `hotkey.py` | GNOME shortcut registration (safe read-modify-write) |
-| `config.py` | defaults and `~/.config/sinlate/config.json` |
-| `sinlate-trigger` | tiny client the hotkey runs; starts the app if needed |
+| `sinlate.py` | App controller: socket server, event pump, worker threads |
+| `engine.py` | Selection grabbing, the Ollama call, clipboard |
+| `popup.py` | Borderless popup that does not steal focus |
+| `mainwin.py` | History and settings window, hotkey capture |
+| `theme.py` | Palette, DPI scaling, monitor geometry |
+| `hotkey.py` | GNOME shortcut registration (read, modify, write) |
+| `config.py` | Defaults and config file handling |
+| `sinlate-trigger` | Small client the hotkey runs; starts the app if needed |
+
+## Tested on
+
+GNOME on Wayland on the same laptop as local-wisprflow, sharing its `gemma3:4b` instance. There, the first translation after an idle gap took about 5 to 10 s while the model loaded, and about 1 s after that.
