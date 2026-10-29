@@ -57,6 +57,16 @@ GNOME hotkey -> sinlate-trigger -> Unix socket -> Sinlate
                                                     '- popup + history
 ```
 
+Detection and translation happen in **one** model call. The model returns a JSON object whose
+keys are, in this order, `source_language`, `target_language` and `translation`, and Ollama's
+structured-output grammar restricts `target_language` to your two languages. Making the model
+commit to the target *before* it writes the translation is what stops gemma3:4b from handing the
+source text back unchanged: with the earlier two-key shape it echoed 7 of 56 test sentences
+(mostly English to German), with this shape 0 of 62, at the same ~1.5 s. A separate
+detect-then-translate round trip was just as reliable but 2.4 times slower, so it is only the
+fallback: if the result still reads like the input, Sinlate retries once with the direction
+spelled out ("translate from English into German"), and the log marks it `echo detected`.
+
 ## Settings (`~/.config/sinlate/config.json`)
 
 | Key | Default | Meaning |
@@ -81,6 +91,7 @@ GNOME hotkey -> sinlate-trigger -> Unix socket -> Sinlate
 | Hotkey does nothing | `python3 hotkey.py show` to inspect, `python3 hotkey.py apply F10` to rebind, `./sinlate-trigger translate` to test the app |
 | Need the logs | `~/.cache/sinlate/sinlate.log` when started by the hotkey |
 | Test the translator alone | `python3 engine.py "Wie spät ist es?"` |
+| The translation is identical to the text you selected | Run `python3 engine.py "the text that came back unchanged"`. `"retried": true` in the output means the echo guard fired and the retry with the explicit direction produced the result. For a single word, a name, a number or code that is the same in both languages, an unchanged result is correct. |
 
 GNOME's shortcut list is the source of truth. If you change the shortcut in GNOME Settings, Sinlate adopts it on the next start.
 

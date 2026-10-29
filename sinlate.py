@@ -155,7 +155,8 @@ class SinlateApp:
             t0 = time.time()
             result = engine.translate(self.cfg, text)
             log(f"{source}: {len(text)}ch {result['source_language']}->"
-                f"{result['target_language']} in {time.time() - t0:.2f}s")
+                f"{result['target_language']} in {time.time() - t0:.2f}s"
+                f"{' (echo detected, retried with explicit direction)' if result.get('retried') else ''}")
 
             copied = False
             if self.cfg["auto_copy"]:
